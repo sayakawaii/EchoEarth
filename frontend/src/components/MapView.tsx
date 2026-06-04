@@ -1,8 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import type { LatLngExpression } from 'leaflet'
 import type { Bubble } from '../lib/types'
 import { BubbleMarker } from './BubbleMarker'
+
+export interface BubbleCluster {
+  key: string
+  lat: number
+  lng: number
+  bubbles: Bubble[] // sorted oldest → newest
+}
 
 interface Props {
   center: LatLngExpression
@@ -12,6 +19,7 @@ interface Props {
   selectedId?: string | null
   onMapClick?: (lat: number, lng: number) => void
   onBubbleClick?: (b: Bubble) => void
+  onClusterClick?: (cluster: BubbleCluster) => void
 }
 
 export function MapView({
@@ -22,7 +30,10 @@ export function MapView({
   selectedId,
   onMapClick,
   onBubbleClick,
+  onClusterClick,
 }: Props) {
+  const clusters = useMemo(() => groupByCoord(bubbles), [bubbles])
+
   return (
     <MapContainer
       center={center}
@@ -43,16 +54,44 @@ export function MapView({
       <Focuser focus={focus} />
       <ClickHandler onMapClick={onMapClick} />
 
-      {bubbles.map((b) => (
-        <BubbleMarker
-          key={b.id}
-          bubble={b}
-          highlighted={b.id === selectedId}
-          onClick={onBubbleClick}
-        />
-      ))}
+      {clusters.map((c) => {
+        const head = c.bubbles[c.bubbles.length - 1]! // most recent on top
+        const isCluster = c.bubbles.length > 1
+        const isSelected = c.bubbles.some((b) => b.id === selectedId)
+        return (
+          <BubbleMarker
+            key={c.key}
+            bubble={head}
+            highlighted={isSelected}
+            clusterSize={c.bubbles.length}
+            onClick={
+              isCluster
+                ? () => onClusterClick?.(c)
+                : (b) => onBubbleClick?.(b)
+            }
+          />
+        )
+      })}
     </MapContainer>
   )
+}
+
+function groupByCoord(bubbles: Bubble[]): BubbleCluster[] {
+  const map = new Map<string, BubbleCluster>()
+  for (const b of bubbles) {
+    const key = `${b.lat.toFixed(2)}_${b.lng.toFixed(2)}`
+    const existing = map.get(key)
+    if (existing) {
+      existing.bubbles.push(b)
+    } else {
+      map.set(key, { key, lat: b.lat, lng: b.lng, bubbles: [b] })
+    }
+  }
+  // Keep each cluster's bubbles sorted oldest → newest.
+  for (const c of map.values()) {
+    c.bubbles.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  }
+  return Array.from(map.values())
 }
 
 function Focuser({ focus }: { focus?: { lat: number; lng: number; zoom?: number } | null }) {

@@ -2,31 +2,18 @@
 
 > 待办 / 风险 / 未决议项。每次迭代结束后刷新。
 >
-> 最近更新:2026-06-04(Iter-02 完成)
+> 最近更新:2026-06-04(Iter-03 完成)
 
 ## 待办(下一迭代候选)
-
-### Iter-03(融入 A/B 元素)
-
-- [ ] 气泡情绪色(B):发布时选 happy/sad/angry/calm 四种;气泡边框/圆点颜色对应。
-- [ ] 消息附 1 张图(A):前端浏览器侧压缩到 < 200KB,以 base64 走 WS;后端按总帧体 ≤ 256KB 校验。
-- [ ] 气泡"喜欢"互动:`like` / `unlike` 上行帧,后端汇总后下发 `like_count`;详情面板显示。
-- [ ] 同坐标气泡 cluster:当 ≥ 3 个气泡落在同一截断坐标时,卡片显示数字徽标,点击展开。
-
-### 通用持续打磨
-
-- [ ] 多浏览器实测移动端 Safari / Android Chrome 真机的 touch / safe area / 输入法行为。
-- [ ] 通知一致化:断网超过 30s 后弹更显眼的 banner;`error` 帧多次同码合并。
-- [ ] 气泡详情面板:右滑手势关闭;粘贴/分享坐标链接。
-- [ ] StatusBar 增加在线人数(后端 `hello` 已具备 `online` 数据)。
-- [ ] 国际化:抽出文案,准备英文版本。
-- [ ] 单元/集成测试:`store`、`hub` 的 Go 测试;`useWebSocket` 的 React 测试。
 
 ### Iter-04(高并发与持久化)
 
 - [ ] 切换存储到 PostGIS 或 Redis GEO,按 bbox 查询。
 - [ ] WebSocket 视区订阅:客户端上报 bbox + zoom,服务端只下发可视区域内的气泡。
 - [ ] 启动 / 关闭时持久化活跃气泡到磁盘,避免重启清空(若选 PostGIS 自动满足)。
+- [ ] 真正的 Leaflet marker cluster:zoom 自适应聚合,不止"同截断坐标"维度。
+- [ ] 图片移到对象存储(S3 兼容),WS / `bubble` 只传引用 URL,降低帧体。
+- [ ] like 计数持久化:Redis ZADD 或数据库,断线/重启不丢。
 
 ### Iter-05(账户)
 
@@ -40,15 +27,42 @@
 - [ ] Docker compose;CI(GitHub Actions);生产部署一键脚本。
 - [ ] OpenStreetMap tile 切换为 Mapbox / CartoDB / 自建,符合公共 tile 用量政策。
 
+### 通用持续打磨(任意时点都可拿来做)
+
+- [ ] 多浏览器真机移动端 Safari / Android Chrome 的 touch / safe area / 输入法行为。
+- [ ] 通知一致化:断网超过 30s 后弹更显眼的 banner;`error` 帧多次同码合并。
+- [ ] StatusBar 增加在线人数(后端 `hello.online` / bootstrap.online 已具备)。
+- [ ] 气泡详情面板:右滑手势关闭;粘贴/分享坐标链接。
+- [ ] Composer 加发布"撤回"(发布后 5s 内取消)。
+- [ ] 心情扩展:`MOODS` 加 `surprise` / `love` / `tired`,需要后端 `IsValidMood` 同步。
+- [ ] Emoji picker 扩展为完整集 + 搜索(可考虑 emoji-mart,接受 ~200KB 体积)。
+- [ ] 国际化:抽出文案,准备英文版本。
+- [ ] 单元/集成测试:Go `store` / `hub` 的 table-driven 测试;前端 `imageCompress` / `useWebSocket` 的 vitest。
+- [ ] WS 心跳上层化:当连续 N 次 ping 没有 pong,主动断开重连。
+
 ## 风险 / 未决
 
 - **ip-api.com 频控**:免费版限制约 45 req/min,生产环境需切到 `ip2location-lite` 离线库或付费 API。MVP 失败时降级到 `{lat:30, lng:0}`。
 - **OSM tile 政策**:OSM 公共 tile 不允许大流量商用,上线前需切到 Mapbox / CartoDB / 自建。
-- **隐私精度**:目前 lat/lng 截断到 0.01(≈ 1.1 km)。若 Iter-05 引入足迹功能,需要重新评估精度策略。
+- **隐私精度**:目前 lat/lng 截断到 0.01(≈ 1.1 km),`math.Trunc` 在浮点边界可能向下取整(例如 39.91 → 39.90)。属于隐私偏保守,可接受。若 Iter-05 引入足迹功能,需要重新评估。
+- **WS 帧体上限 256 KB**:Iter-03 已为附图扩容到 256 KB;超出由 gorilla `ReadLimit` 触发 close 1009,无业务级 error 帧。客户端会触发自动重连 + warn Toast(可选优化:在前端 send 前做硬校验)。
+- **附图常驻内存**:200 个气泡 × ≤200 KB ≈ 40 MB。MVP 可承受;Iter-04 需移到对象存储 + URL 引用。
+- **Like 不持久化、不去重 Cross-Session**:同一人换浏览器/清缓存后再点会再次 +1(因为 clientId 重新生成),计数偏高。Iter-04+ 接账户后改为按 user_id 去重。
 - **脏词过滤**:MVP 仅内置 2 个示意词,严重不足;Iter-03+ 需引入更完整词库或外部审核。
 - **未做认证的 WS**:任何人可连入并发消息,目前仅 10s/条 频控。Iter-05 引入账户后需加 token 鉴权。
 - **跨域**:本地通过 Vite 代理避开;部署时需后端开严格 CORS 或同源部署。
-- **Toast 与 a11y screen reader 行为未在真机 VO/TalkBack 上验证**(Iter-02 仅做了 `aria-live` 标注)。
+- **图片来源伪造**:`data:image/...` 前缀仅做字符串校验,不校验真实二进制头。MVP 可接受;严格场景需服务端嗅探 magic bytes。
+- **Toast 与 a11y screen reader 行为未在真机 VO/TalkBack 上验证**。
+
+## 已关闭(Iter-03)
+
+- [x] **Mood**:`Bubble.mood` (calm/happy/sad/angry) 透传后端;MoodPicker UI + 持久化 `localStorage.echoearth.mood`;气泡圆点/卡片描边/详情面板进度条按情绪上色。
+- [x] **图片附件**:`Bubble.image` data URL 透传;前端 canvas 自动压缩到 ≤ 150 KB(质量迭代 + 维度收缩),Composer 缩略图 + × 取消;气泡卡片缩略图、详情面板大图 + 点击全屏查看。
+- [x] **Like 互动**:`like` 上行帧(toggle);后端 `Store.ToggleLike` 维护 `map[bubbleID]set[clientID]`;`like_update {bubbleId, count}` 广播;详情面板 ♥ 按钮 + 计数 + 本地持久化 likedIds。
+- [x] **同坐标 Cluster**:前端按 `${lat.toFixed(2)}_${lng.toFixed(2)}` 分组,≥ 2 个折叠为一个 marker + 数字徽标;`ClusterList` 侧抽屉显示列表 → 选中进 BubbleDetail;成员过期自动同步。
+- [x] **WS 帧体上限**:`maxMessageSize` 由 4 KiB 提升至 **256 KiB**;hello 增 `maxImageBytes` (200 KiB)。
+- [x] **错误码**:新增 `bad_image` / `image_too_large` / `not_found`,前端映射到 warn Toast。
+- [x] **E2E 验证**:Iter-03 smoke 通过(详见 deliveries/2026-06-04_iter-03_*.md)。
 
 ## 已关闭(Iter-02)
 

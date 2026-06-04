@@ -9,9 +9,11 @@ import (
 )
 
 const (
-	writeWait      = 10 * time.Second
-	readWait       = 60 * time.Second
-	maxMessageSize = 4 << 10 // 4 KiB; bubble payload is tiny
+	writeWait = 10 * time.Second
+	readWait  = 60 * time.Second
+	// maxMessageSize accommodates ~150 KiB compressed image (base64 + JSON
+	// envelope overhead). The frontend caps payloads at 150 KiB before send.
+	maxMessageSize = 256 << 10 // 256 KiB
 
 	sendBuffer = 32
 )

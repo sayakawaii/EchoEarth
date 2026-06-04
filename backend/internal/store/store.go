@@ -7,6 +7,26 @@ import (
 	"time"
 )
 
+// Mood reflects the emotional tone of a bubble.
+//
+// Empty string is treated as "calm". Frontend constrains UI to the listed set.
+type Mood string
+
+const (
+	MoodCalm  Mood = "calm"
+	MoodHappy Mood = "happy"
+	MoodSad   Mood = "sad"
+	MoodAngry Mood = "angry"
+)
+
+func IsValidMood(m Mood) bool {
+	switch m {
+	case "", MoodCalm, MoodHappy, MoodSad, MoodAngry:
+		return true
+	}
+	return false
+}
+
 // Bubble is a published map message with a TTL.
 type Bubble struct {
 	ID        string    `json:"id"`
@@ -17,6 +37,14 @@ type Bubble struct {
 	ClientID  string    `json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
 	ExpiresAt time.Time `json:"expiresAt"`
+
+	Mood Mood `json:"mood,omitempty"`
+	// Image is an optional inline data URL (e.g. "data:image/jpeg;base64,..."),
+	// already compressed on the client. Capped server-side by the WS frame limit.
+	Image string `json:"image,omitempty"`
+	// Likes is the snapshot count when the bubble is sent. The authoritative
+	// value lives in Store.likes and is broadcast separately via `like_update`.
+	Likes int `json:"likes"`
 }
 
 // Store is an in-memory bubble store with TTL eviction.
@@ -24,6 +52,7 @@ type Bubble struct {
 type Store struct {
 	mu       sync.RWMutex
 	items    map[string]*Bubble
+	likes    map[string]map[string]struct{} // bubbleID -> set of clientIDs
 	maxItems int
 	onExpire func(id string)
 }
@@ -36,6 +65,7 @@ func New(maxItems int) *Store {
 	}
 	return &Store{
 		items:    make(map[string]*Bubble),
+		likes:    make(map[string]map[string]struct{}),
 		maxItems: maxItems,
 	}
 }
@@ -67,6 +97,7 @@ func (s *Store) Add(b *Bubble) {
 		}
 		if oldestID != "" {
 			delete(s.items, oldestID)
+			delete(s.likes, oldestID)
 			fn := s.onExpire
 			s.mu.Unlock()
 			if fn != nil {
@@ -76,6 +107,42 @@ func (s *Store) Add(b *Bubble) {
 		}
 	}
 	s.mu.Unlock()
+}
+
+// ToggleLike flips the like state for (bubbleID, clientID) and returns the
+// new count along with whether the bubble exists. If the bubble has expired,
+// exists=false and count=0.
+func (s *Store) ToggleLike(bubbleID, clientID string) (count int, liked bool, exists bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.items[bubbleID]
+	if !ok {
+		return 0, false, false
+	}
+	set, ok := s.likes[bubbleID]
+	if !ok {
+		set = make(map[string]struct{})
+		s.likes[bubbleID] = set
+	}
+	if _, ok := set[clientID]; ok {
+		delete(set, clientID)
+		liked = false
+	} else {
+		set[clientID] = struct{}{}
+		liked = true
+	}
+	b.Likes = len(set)
+	return b.Likes, liked, true
+}
+
+// LikeCount returns the current like count for a bubble (0 if unknown).
+func (s *Store) LikeCount(bubbleID string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if set, ok := s.likes[bubbleID]; ok {
+		return len(set)
+	}
+	return 0
 }
 
 // Snapshot returns a sorted (oldest → newest) copy of currently active bubbles.
@@ -128,6 +195,7 @@ func (s *Store) sweep() {
 		if !now.Before(b.ExpiresAt) {
 			expired = append(expired, id)
 			delete(s.items, id)
+			delete(s.likes, id)
 		}
 	}
 	fn := s.onExpire

@@ -24,6 +24,9 @@ type Config struct {
 	RateLimitWindow time.Duration
 	MaxTextChars    int
 	CoordDecimals   int
+	// MaxImageBytes is the cap on the raw bytes of the inline image data URL.
+	// Frontend should compress below this; server-side it is a hard reject.
+	MaxImageBytes int
 	// BadWords is a tiny demo blocklist. Substring match, case-insensitive.
 	BadWords []string
 }
@@ -35,6 +38,7 @@ func DefaultConfig() Config {
 		RateLimitWindow: 10 * time.Second,
 		MaxTextChars:    140,
 		CoordDecimals:   2,
+		MaxImageBytes:   200 * 1024, // 200 KiB
 		BadWords:        []string{"badword1", "badword2"},
 	}
 }
@@ -104,6 +108,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		ServerTime:    time.Now().UnixMilli(),
 		RateLimitSecs: int(h.cfg.RateLimitWindow.Seconds()),
 		MaxTextChars:  h.cfg.MaxTextChars,
+		MaxImageBytes: h.cfg.MaxImageBytes,
 	}
 	if frame, err := makeFrame(TypeHello, hello); err == nil {
 		c.trySend(frame)
@@ -174,6 +179,13 @@ func (h *Hub) handleClientMessage(c *Client, env Envelope) {
 			return
 		}
 		h.handlePublish(c, p)
+	case TypeLike:
+		var p LikePayload
+		if err := json.Unmarshal(env.Payload, &p); err != nil {
+			c.sendError("bad_payload", "like payload invalid")
+			return
+		}
+		h.handleLike(c, p)
 	default:
 		c.sendError("unknown_type", "unknown frame type: "+env.Type)
 	}
@@ -193,6 +205,20 @@ func (h *Hub) handlePublish(c *Client, p PublishPayload) {
 		c.sendError("blocked", "text rejected by content filter")
 		return
 	}
+	if !store.IsValidMood(p.Mood) {
+		c.sendError("bad_payload", "unknown mood")
+		return
+	}
+	if p.Image != "" {
+		if !strings.HasPrefix(p.Image, "data:image/") {
+			c.sendError("bad_image", "image must be a data:image/... URL")
+			return
+		}
+		if len(p.Image) > h.cfg.MaxImageBytes {
+			c.sendError("image_too_large", "image exceeds size limit")
+			return
+		}
+	}
 	// Rate limit per client.
 	since := time.Now().Add(-h.cfg.RateLimitWindow)
 	if h.store.CountByClientSince(c.id, since) > 0 {
@@ -201,6 +227,11 @@ func (h *Hub) handlePublish(c *Client, p PublishPayload) {
 	}
 	// Read nickname from query param at connect time (set by client via WS URL).
 	nickname := c.nicknameOrDefault()
+
+	mood := p.Mood
+	if mood == "" {
+		mood = store.MoodCalm
+	}
 
 	now := time.Now()
 	b := &store.Bubble{
@@ -212,12 +243,36 @@ func (h *Hub) handlePublish(c *Client, p PublishPayload) {
 		ClientID:  c.id,
 		CreatedAt: now,
 		ExpiresAt: now.Add(h.cfg.BubbleTTL),
+		Mood:      mood,
+		Image:     p.Image,
+		Likes:     0,
 	}
 	h.store.Add(b)
 
 	frame, err := makeFrame(TypeBubble, b)
 	if err != nil {
 		h.log.Error("encode bubble failed", "err", err)
+		return
+	}
+	h.broadcast(frame)
+}
+
+func (h *Hub) handleLike(c *Client, p LikePayload) {
+	if p.BubbleID == "" {
+		c.sendError("bad_payload", "missing bubbleId")
+		return
+	}
+	count, _, exists := h.store.ToggleLike(p.BubbleID, c.id)
+	if !exists {
+		c.sendError("not_found", "bubble expired or unknown")
+		return
+	}
+	frame, err := makeFrame(TypeLikeUpdate, LikeUpdatePayload{
+		BubbleID: p.BubbleID,
+		Count:    count,
+	})
+	if err != nil {
+		h.log.Error("encode like_update failed", "err", err)
 		return
 	}
 	h.broadcast(frame)

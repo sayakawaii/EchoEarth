@@ -2,9 +2,11 @@
 
 export type FrameType =
   | 'publish'
+  | 'like'
   | 'ping'
   | 'hello'
   | 'bubble'
+  | 'like_update'
   | 'expire'
   | 'pong'
   | 'error'
@@ -14,10 +16,20 @@ export interface Envelope<T = unknown> {
   payload?: T
 }
 
+export type Mood = 'calm' | 'happy' | 'sad' | 'angry'
+
+export const MOODS: Mood[] = ['calm', 'happy', 'sad', 'angry']
+
 export interface PublishPayload {
   text: string
   lat: number
   lng: number
+  mood?: Mood
+  image?: string
+}
+
+export interface LikePayload {
+  bubbleId: string
 }
 
 export interface Bubble {
@@ -28,6 +40,9 @@ export interface Bubble {
   nickname: string
   createdAt: string // ISO timestamp
   expiresAt: string
+  mood?: Mood
+  image?: string
+  likes: number
 }
 
 export interface IPLocation {
@@ -46,10 +61,16 @@ export interface HelloPayload {
   serverTime: number
   rateLimitSecs: number
   maxTextChars: number
+  maxImageBytes: number
 }
 
 export interface ExpirePayload {
   id: string
+}
+
+export interface LikeUpdatePayload {
+  bubbleId: string
+  count: number
 }
 
 export interface ErrorPayload {

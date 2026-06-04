@@ -87,7 +87,7 @@ body {
   padding: 8px 12px;
   background: var(--echo-bubble-card-bg);
   color: var(--echo-text);
-  border: 1px solid var(--echo-bubble-border);
+  border: 1px solid var(--echo-bubble-mood-border, var(--echo-bubble-border));
   border-radius: 12px;
   box-shadow: var(--echo-bubble-glow);
   backdrop-filter: blur(6px);
@@ -98,12 +98,57 @@ body {
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
 .echo-bubble__card:hover {
-  border-color: var(--echo-accent);
+  border-color: var(--echo-bubble-mood-border, var(--echo-accent));
   transform: translate(-50%, -103%) scale(1.02);
 }
 .echo-bubble__card--active {
-  border-color: var(--echo-accent);
-  box-shadow: var(--echo-bubble-glow), 0 0 0 2px var(--echo-accent);
+  border-color: var(--echo-bubble-mood-border, var(--echo-accent));
+  box-shadow: var(--echo-bubble-glow), 0 0 0 2px var(--echo-bubble-mood-border, var(--echo-accent));
+}
+
+.echo-bubble__thumb {
+  display: block;
+  margin-top: 6px;
+  width: 100%;
+  max-height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.echo-bubble__likes {
+  position: absolute;
+  left: -6px;
+  bottom: -8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(244, 63, 94, 0.18);
+  color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.45);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.25);
+}
+
+.echo-bubble__cluster {
+  position: absolute;
+  right: -6px;
+  top: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--echo-accent);
+  color: var(--echo-bg);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .echo-bubble__nick {
@@ -140,9 +185,9 @@ body {
   height: 10px;
   margin-left: -5px;
   margin-top: -5px;
-  background: var(--echo-bubble-dot);
+  background: var(--echo-bubble-dot-color, var(--echo-bubble-dot));
   border-radius: 50%;
-  box-shadow: 0 0 12px var(--echo-bubble-dot);
+  box-shadow: 0 0 12px var(--echo-bubble-dot-color, var(--echo-bubble-dot));
   animation: echoPulse 2s ease-out infinite;
 }
 

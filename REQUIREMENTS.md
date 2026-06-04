@@ -2,7 +2,7 @@
 
 > 本文件随迭代更新。每次迭代完成后,请同步刷新本文件、`OPEN_ITEMS.md`,并在 `deliveries/` 新增对应交付记录。
 >
-> 最近更新:2026-06-04(Iter-02)
+> 最近更新:2026-06-04(Iter-03)
 
 ## 0. 一句话定位
 
@@ -30,7 +30,8 @@ echoearth/
 ├── Makefile                          install / dev / backend / frontend
 ├── deliveries/
 │   ├── 2026-06-03_iter-01_mvp-skeleton.md
-│   └── 2026-06-04_iter-02_composer-polish.md
+│   ├── 2026-06-04_iter-02_composer-polish.md
+│   └── 2026-06-04_iter-03_mood-image-like-cluster.md
 ├── backend/
 │   ├── go.mod
 │   ├── cmd/server/main.go            入口
@@ -53,8 +54,11 @@ echoearth/
 │       │   ├── MapView.tsx
 │       │   ├── BubbleMarker.tsx
 │       │   ├── BubbleDetail.tsx          [Iter-02]
+│       │   ├── ClusterList.tsx           [Iter-03]
 │       │   ├── ComposerDock.tsx
 │       │   ├── EmojiPicker.tsx           [Iter-02]
+│       │   ├── ImagePicker.tsx           [Iter-03]
+│       │   ├── MoodPicker.tsx            [Iter-03]
 │       │   ├── NicknameDialog.tsx
 │       │   ├── SkinToggle.tsx            [Iter-02]
 │       │   ├── StatusBar.tsx
@@ -65,8 +69,9 @@ echoearth/
 │       │   ├── useTheme.ts               [Iter-02]
 │       │   └── useWebSocket.ts
 │       └── lib/
-│           ├── types.ts
-│           └── api.ts
+│           ├── api.ts
+│           ├── imageCompress.ts          [Iter-03]
+│           └── types.ts
 └── .gitignore
 ```
 
@@ -93,12 +98,14 @@ echoearth/
 - 字数提示分级:> 70% 警示色(amber),> 100% 红色且禁用发送。**[Iter-02]**
 - 输入交互:**Enter 发送、Shift+Enter 换行**;IME 组词期间(`isComposing`)不触发发送。**[Iter-02]**
 - Emoji picker:精选 40 个常用 emoji 网格,点击插入到光标位置,点击外部 / `Esc` 关闭;不引入第三方库。**[Iter-02]**
+- **Mood Picker** **[Iter-03]**:4 选 1 情绪 `calm` / `happy` / `sad` / `angry`(默认 `calm`,选中态环描边),`localStorage.echoearth.mood` 持久化。
+- **图片附件** **[Iter-03]**:可选 1 张图片 (`image/*`),浏览器侧 canvas 压缩(最长边 800px,JPEG 质量 0.82 → 0.4 自动迭代),目标 ≤ 150 KB;Composer 显示缩略图 + 尺寸/体积 + × 取消;> 150 KB 弹 warn Toast。
 - 顶部 meta 一行展示:昵称 · 当前坐标 · 来源(浏览器/IP/手动)· IP 城市(若有)。**[Iter-02]**
 - 频控:同 `clientId` **10 秒内最多 1 条**。
 - 流程:
   1. 前端确定坐标(geolocation → IP 兜底 → 地图点击覆盖)。
-  2. 通过 WS 发送 `publish` 帧:`{type:"publish", payload:{text, lat, lng}}`。
-  3. 后端校验通过 → 写入内存 → 广播 `bubble` 帧给所有在线客户端。
+  2. 通过 WS 发送 `publish` 帧:`{type:"publish", payload:{text, lat, lng, mood?, image?}}`。
+  3. 后端校验(text / mood 枚举 / image data URL 前缀 + ≤ `maxImageBytes`)→ 写入内存 → 广播 `bubble` 帧给所有在线客户端。
 
 ### 3.4 气泡显示
 
@@ -106,6 +113,9 @@ echoearth/
 - 长文本(>80 字)在卡片上截断显示 + 省略号,完整文本在详情面板中查看。**[Iter-02]**
 - 卡片可点击(`interactive=true`),点击 → 弹出右侧详情面板。**[Iter-02]**
 - 选中态:被选中的气泡卡片高亮(描边 + 外发光)。**[Iter-02]**
+- **Mood 上色** **[Iter-03]**:发光圆点 + 卡片描边颜色随 `mood` 切换(`happy` amber / `sad` sky / `angry` rose / `calm` 取主题色)。
+- **缩略图** **[Iter-03]**:若 `image` 非空,在卡片下方渲染 72px 高的缩略图。
+- **♥ 角标** **[Iter-03]**:若 `likes > 0`,左下角显示玫红 ♥ 数字。
 - 进入动画:scale + fade;hover 时轻微抬起。
 - 5 分钟生命周期:
   - 后端定时器扫描,过期删并广播 `expire`。
@@ -136,18 +146,36 @@ echoearth/
 - 通过 `<html data-skin="...">` + CSS 变量驱动,组件直接读 `var(--echo-...)`。
 - 右上角胶囊按钮一键切换。
 
+### 3.10 喜欢(Like) [Iter-03]
+
+- 详情面板底部 ♡ / ♥ 按钮:点击 toggle;同 `clientId` 再点取消。
+- 服务端在内存中维护 `map[bubbleID]set[clientID]`,广播 `like_update {bubbleId, count}` 给所有在线客户端;气泡过期 / 被淘汰时一并清除。
+- 客户端本地用 `localStorage.echoearth.likedBubbles`(string set)持久化"我点过的气泡",重连后保持 UI 高亮;气泡过期会自动从该集合移除。
+- 不广播"谁喜欢了"。MVP 不持久化 like 总数,服务重启清空。
+
+### 3.11 同坐标 Cluster [Iter-03]
+
+- 后端坐标已按 0.01° 截断;前端按 `${lat.toFixed(2)}_${lng.toFixed(2)}` 分组。
+- 每组 ≥ 2 个气泡时只渲染 1 个 marker(最新一条),右上角 `+N` 徽标。
+- 点击 cluster → 弹"该坐标气泡列表"侧抽屉(`ClusterList`),倒序显示;选中某条 → 进 BubbleDetail。
+- 单条不触发 cluster,直接 BubbleDetail。
+- 当 cluster 中部分 bubble 过期,自动同步面板内容;最后一条过期则关闭面板。
+
 ### 3.5 实时通道
 
 - WebSocket 路径:`/ws`
+- WebSocket 帧体上限:**256 KiB** **[Iter-03]**(为附图扩容,超出由 gorilla 自动 close 1009)。
 - 上行帧:
-  - `publish` `{text, lat, lng}`
+  - `publish` `{text, lat, lng, mood?, image?}` **[Iter-03 扩展]**
+  - `like` `{bubbleId}` **[Iter-03]** — toggle 语义:同 `clientId` 重复发即取消
   - `ping` `{}`
 - 下行帧:
-  - `hello` `{clientId, ipLocation:{lat,lng,city,country}, activeBubbles:[...]}`
-  - `bubble` `{id, text, lat, lng, nickname, createdAt, expiresAt}`
+  - `hello` `{clientId, ipLocation, activeBubbles, bubbleTtlSecs, serverTime, rateLimitSecs, maxTextChars, maxImageBytes}` **[Iter-03 增 maxImageBytes]**
+  - `bubble` `{id, text, lat, lng, nickname, createdAt, expiresAt, mood?, image?, likes}` **[Iter-03 增 mood/image/likes]**
+  - `like_update` `{bubbleId, count}` **[Iter-03]**
   - `expire` `{id}`
   - `pong` `{}`
-  - `error` `{code, message}`
+  - `error` `{code, message}` — 新增码:`bad_image` / `image_too_large` / `not_found`
 - 心跳:客户端 25s 一次 `ping`;后端 60s 无消息断开。
 - 重连:客户端指数退避(1s, 2s, 4s, ..., 上限 30s)。
 
@@ -177,8 +205,8 @@ echoearth/
 | --- | --- | --- |
 | Iter-01 | MVP 骨架:目录结构、地图、昵称、发布广播、5min 过期、内存存储、IP 兜底、本地一键启动 | ✅ |
 | Iter-02 | Composer 升级(emoji / 字数 / Enter 发送 / 点位预览)、Toast 系统、气泡详情面板、cyber/calm 双主题、移动端响应式 | ✅ |
-| Iter-03 | 融入 A/B 元素:气泡情绪色(B)、消息可附 1 张图(A)、可"喜欢"、同坐标气泡 cluster | ☐ |
-| Iter-04 | 切换存储到 PostGIS / Redis GEO;视区(bbox)查询;持久化 | ☐ |
+| Iter-03 | 融入 A/B 元素:气泡情绪色(B)、消息可附 1 张图(A)、可"喜欢"、同坐标气泡 cluster | ✅ |
+| Iter-04 | 切换存储到 PostGIS / Redis GEO;视区(bbox)查询;持久化;图片移到对象存储 | ☐ |
 | Iter-05 | 邮箱注册 + 账户体系;个人足迹页(方向 A 产品化);消息举报与审核 | ☐ |
 | Iter-06 | WebSocket 横向扩展(Redis pub/sub);Docker / 生产部署 | ☐ |
 

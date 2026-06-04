@@ -1,39 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { UserPosition } from '../hooks/useGeolocation'
-import type { IPLocation } from '../lib/types'
+import type { IPLocation, Mood } from '../lib/types'
 import { EmojiPicker } from './EmojiPicker'
+import { MoodPicker } from './MoodPicker'
+import { ImagePicker } from './ImagePicker'
 
 interface Props {
   position: UserPosition | null
   maxChars: number
+  maxImageBytes: number
   disabled: boolean
   ipLocation?: IPLocation | null
-  onSend: (text: string) => void
+  onSend: (text: string, mood: Mood, image: string | null) => void
+  onError: (msg: string) => void
   onChangeNickname?: () => void
   nickname: string
+  mood: Mood
+  onMoodChange: (m: Mood) => void
 }
 
 export function ComposerDock({
   position,
   maxChars,
+  maxImageBytes,
   disabled,
   ipLocation,
   onSend,
+  onError,
   onChangeNickname,
   nickname,
+  mood,
+  onMoodChange,
 }: Props) {
   const [text, setText] = useState('')
+  const [image, setImage] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const emojiBtnRef = useRef<HTMLButtonElement>(null)
 
   const trimmed = text.trim()
-  const length = [...trimmed].length // count code points, not UTF-16 units
+  const length = [...trimmed].length
   const over = length > maxChars
   const warn = !over && length > maxChars * 0.7
-  const canSend = !disabled && !!position && length > 0 && !over
+  const hasText = length > 0
+  const canSend = !disabled && !!position && hasText && !over
 
-  // Auto-grow textarea up to 5 lines.
   useEffect(() => {
     const el = taRef.current
     if (!el) return
@@ -60,18 +71,15 @@ export function ComposerDock({
     requestAnimationFrame(() => {
       el.focus()
       const caret = start + e.length
-      try {
-        el.setSelectionRange(caret, caret)
-      } catch {
-        // ignore
-      }
+      try { el.setSelectionRange(caret, caret) } catch { /* ignore */ }
     })
   }
 
   const submit = () => {
     if (!canSend) return
-    onSend(trimmed)
+    onSend(trimmed, mood, image)
     setText('')
+    setImage(null)
   }
 
   return (
@@ -93,9 +101,7 @@ export function ComposerDock({
                 <span className="rounded-full border border-white/10 px-1.5 py-px text-[10px] uppercase tracking-wide">
                   {sourceLabel(position.source)}
                 </span>
-                {cityLabel && (
-                  <span className="opacity-80">{cityLabel}</span>
-                )}
+                {cityLabel && <span className="opacity-80">{cityLabel}</span>}
               </>
             ) : (
               <span>位置获取中…可点击地图选点</span>
@@ -118,6 +124,18 @@ export function ComposerDock({
               {length}/{maxChars}
             </span>
           </span>
+        </div>
+
+        {/* Mood + image controls row */}
+        <div className="mb-2 flex flex-wrap items-center gap-3">
+          <MoodPicker value={mood} onChange={onMoodChange} />
+          <span aria-hidden className="text-[var(--echo-muted)]/50">|</span>
+          <ImagePicker
+            value={image}
+            onChange={(v) => setImage(v)}
+            onError={onError}
+            targetBytes={Math.max(60 * 1024, Math.min(maxImageBytes - 8 * 1024, 150 * 1024))}
+          />
         </div>
 
         {/* Input row */}
@@ -171,10 +189,7 @@ export function ComposerDock({
           <EmojiPicker
             open={pickerOpen}
             anchorRef={emojiBtnRef}
-            onSelect={(e) => {
-              insertEmoji(e)
-              // Keep picker open for multiple inserts; user can press Esc or click outside.
-            }}
+            onSelect={insertEmoji}
             onClose={() => setPickerOpen(false)}
           />
         </form>
