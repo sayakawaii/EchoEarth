@@ -9,10 +9,20 @@ interface Props {
   zoom?: number
   bubbles: Bubble[]
   focus?: { lat: number; lng: number; zoom?: number } | null
+  selectedId?: string | null
   onMapClick?: (lat: number, lng: number) => void
+  onBubbleClick?: (b: Bubble) => void
 }
 
-export function MapView({ center, zoom = 2, bubbles, focus, onMapClick }: Props) {
+export function MapView({
+  center,
+  zoom = 2,
+  bubbles,
+  focus,
+  selectedId,
+  onMapClick,
+  onBubbleClick,
+}: Props) {
   return (
     <MapContainer
       center={center}
@@ -34,7 +44,12 @@ export function MapView({ center, zoom = 2, bubbles, focus, onMapClick }: Props)
       <ClickHandler onMapClick={onMapClick} />
 
       {bubbles.map((b) => (
-        <BubbleMarker key={b.id} bubble={b} />
+        <BubbleMarker
+          key={b.id}
+          bubble={b}
+          highlighted={b.id === selectedId}
+          onClick={onBubbleClick}
+        />
       ))}
     </MapContainer>
   )

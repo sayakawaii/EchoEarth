@@ -1,25 +1,40 @@
 import type { WSStatus } from '../hooks/useWebSocket'
+import type { Skin } from '../lib/types'
+import { SkinToggle } from './SkinToggle'
 
 interface Props {
   status: WSStatus
   bubbleCount: number
+  skin: Skin
+  onToggleSkin: () => void
 }
 
-export function StatusBar({ status, bubbleCount }: Props) {
-  const { color, label } = statusMeta(status)
+export function StatusBar({ status, bubbleCount, skin, onToggleSkin }: Props) {
+  const { dot, label } = statusMeta(status)
   return (
-    <div className="pointer-events-none fixed left-3 top-3 z-[1500] flex items-center gap-3 rounded-full border border-white/10 bg-echo-panel/80 px-3 py-1.5 text-xs text-echo-text shadow-lg backdrop-blur">
-      <span className="flex items-center gap-1.5">
-        <span
-          className={`inline-block h-2 w-2 rounded-full ${color}`}
-          style={{ boxShadow: '0 0 8px currentColor' }}
-        />
-        {label}
-      </span>
-      <span className="text-echo-muted">·</span>
-      <span>
-        活跃气泡 <span className="font-semibold text-echo-accent">{bubbleCount}</span>
-      </span>
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[1500] flex items-start justify-between gap-2 p-3">
+      <div
+        className="flex items-center gap-2 rounded-full border border-white/10 bg-[var(--echo-panel)]/85 px-3 py-1.5 text-xs text-[var(--echo-text)] shadow-lg backdrop-blur"
+        role="status"
+        aria-live="polite"
+      >
+        <span className="flex items-center gap-1.5">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${dot}`}
+            style={{ boxShadow: '0 0 8px currentColor' }}
+            aria-hidden
+          />
+          <span className="hidden xs:inline">{label}</span>
+          <span className="xs:hidden">{shortLabel(status)}</span>
+        </span>
+        <span aria-hidden className="text-[var(--echo-muted)]">·</span>
+        <span>
+          <span className="hidden xs:inline">活跃气泡 </span>
+          <span className="font-semibold text-[var(--echo-accent)]">{bubbleCount}</span>
+        </span>
+      </div>
+
+      <SkinToggle skin={skin} onToggle={onToggleSkin} />
     </div>
   )
 }
@@ -27,12 +42,25 @@ export function StatusBar({ status, bubbleCount }: Props) {
 function statusMeta(s: WSStatus) {
   switch (s) {
     case 'open':
-      return { color: 'bg-emerald-400 text-emerald-400', label: '已连接' }
+      return { dot: 'bg-emerald-400 text-emerald-400', label: '已连接' }
     case 'connecting':
-      return { color: 'bg-amber-400 text-amber-400', label: '连接中…' }
+      return { dot: 'bg-amber-400 text-amber-400', label: '连接中…' }
     case 'closed':
-      return { color: 'bg-red-400 text-red-400', label: '已断开,自动重连' }
+      return { dot: 'bg-red-400 text-red-400', label: '已断开,自动重连' }
     default:
-      return { color: 'bg-slate-400 text-slate-400', label: '等待' }
+      return { dot: 'bg-slate-400 text-slate-400', label: '等待' }
+  }
+}
+
+function shortLabel(s: WSStatus): string {
+  switch (s) {
+    case 'open':
+      return '在线'
+    case 'connecting':
+      return '连接…'
+    case 'closed':
+      return '重连…'
+    default:
+      return '等待'
   }
 }

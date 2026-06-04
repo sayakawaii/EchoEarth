@@ -2,7 +2,7 @@
 
 > 本文件随迭代更新。每次迭代完成后,请同步刷新本文件、`OPEN_ITEMS.md`,并在 `deliveries/` 新增对应交付记录。
 >
-> 最近更新:2026-06-03(Iter-01)
+> 最近更新:2026-06-04(Iter-02)
 
 ## 0. 一句话定位
 
@@ -29,7 +29,8 @@ echoearth/
 ├── OPEN_ITEMS.md                     待办 / 风险 / 未决
 ├── Makefile                          install / dev / backend / frontend
 ├── deliveries/
-│   └── 2026-06-03_iter-01_mvp-skeleton.md
+│   ├── 2026-06-03_iter-01_mvp-skeleton.md
+│   └── 2026-06-04_iter-02_composer-polish.md
 ├── backend/
 │   ├── go.mod
 │   ├── cmd/server/main.go            入口
@@ -51,11 +52,18 @@ echoearth/
 │       ├── components/
 │       │   ├── MapView.tsx
 │       │   ├── BubbleMarker.tsx
+│       │   ├── BubbleDetail.tsx          [Iter-02]
 │       │   ├── ComposerDock.tsx
-│       │   └── NicknameDialog.tsx
+│       │   ├── EmojiPicker.tsx           [Iter-02]
+│       │   ├── NicknameDialog.tsx
+│       │   ├── SkinToggle.tsx            [Iter-02]
+│       │   ├── StatusBar.tsx
+│       │   └── Toast.tsx                 [Iter-02]
 │       ├── hooks/
-│       │   ├── useWebSocket.ts
-│       │   └── useGeolocation.ts
+│       │   ├── useGeolocation.ts
+│       │   ├── useNickname.ts
+│       │   ├── useTheme.ts               [Iter-02]
+│       │   └── useWebSocket.ts
 │       └── lib/
 │           ├── types.ts
 │           └── api.ts
@@ -80,8 +88,12 @@ echoearth/
 
 ### 3.3 发消息(气泡)
 
-- 底部固定输入条:文本输入 + 字数提示 + "发送" 按钮。
-- 文本规则:1–140 字符,允许 emoji;后端做基础脏词过滤(内置 demo 词表)。
+- 底部固定输入条:多行 textarea(自动增高,最高 5 行)+ 实时字数提示 + emoji 按钮 + "发送" 按钮。**[Iter-02]**
+- 文本规则:1–140 字符(按 code point 计数,正确兼容 emoji),允许 emoji;后端做基础脏词过滤(内置 demo 词表)。
+- 字数提示分级:> 70% 警示色(amber),> 100% 红色且禁用发送。**[Iter-02]**
+- 输入交互:**Enter 发送、Shift+Enter 换行**;IME 组词期间(`isComposing`)不触发发送。**[Iter-02]**
+- Emoji picker:精选 40 个常用 emoji 网格,点击插入到光标位置,点击外部 / `Esc` 关闭;不引入第三方库。**[Iter-02]**
+- 顶部 meta 一行展示:昵称 · 当前坐标 · 来源(浏览器/IP/手动)· IP 城市(若有)。**[Iter-02]**
 - 频控:同 `clientId` **10 秒内最多 1 条**。
 - 流程:
   1. 前端确定坐标(geolocation → IP 兜底 → 地图点击覆盖)。
@@ -90,12 +102,39 @@ echoearth/
 
 ### 3.4 气泡显示
 
-- 用 Leaflet `divIcon` 渲染自定义 HTML(Tailwind 样式:圆角卡片 + 小三角 + 阴影)。
-- 进入动画:scale + fade。
+- 用 Leaflet `divIcon` 渲染自定义 HTML(圆角卡片 + 小三角 + 阴影 + 脉冲发光圆点)。
+- 长文本(>80 字)在卡片上截断显示 + 省略号,完整文本在详情面板中查看。**[Iter-02]**
+- 卡片可点击(`interactive=true`),点击 → 弹出右侧详情面板。**[Iter-02]**
+- 选中态:被选中的气泡卡片高亮(描边 + 外发光)。**[Iter-02]**
+- 进入动画:scale + fade;hover 时轻微抬起。
 - 5 分钟生命周期:
   - 后端定时器扫描,过期删并广播 `expire`。
   - 前端本地兜底:基于 `createdAt + 5min` 自删,防丢消息。
 - 渲染上限:全局最多 200 个气泡(超出按 `createdAt` 旧→新淘汰)。
+
+### 3.7 气泡详情面板 [Iter-02]
+
+- 由右向左滑出的侧抽屉(`max-w-sm` / `sm:max-w-md`),展示:
+  - 昵称、坐标(2 位小数)
+  - 全文(`whitespace-pre-wrap`,允许多行)
+  - 发布时间 / 过期时间(本地时区,精确到秒)
+  - 剩余 TTL(`Xm YYs` + 进度条,1Hz 刷新)
+- 操作:"在地图聚焦"(`flyTo` zoom=6)、"关闭"、`Esc` 关闭。
+- 若选中气泡被远端 `expire` 或本地 TTL 扫除,自动关闭面板。
+
+### 3.8 Toast 通知 [Iter-02]
+
+- 四级:`info` / `success` / `warn` / `error`,对应不同色调与图标。
+- 默认时长 3.5–5s,可手动 ×,可叠加(最多 4 个,溢出移除最旧)。
+- 触发源:服务端 `error` 帧(rate_limited / too_long / blocked …)、本地校验失败、WS 断开与重连提示。
+- a11y:`error` 用 `role="alert"`,其余用 `role="status"`。
+
+### 3.9 主题(皮肤) [Iter-02]
+
+- 两套主题:`cyber`(默认,深空黑 + 青/紫高亮 + 径向发光背景)与 `calm`(海军蓝 + 天蓝高亮 + 线性渐变)。
+- 持久化:`localStorage.echoearth.skin`。
+- 通过 `<html data-skin="...">` + CSS 变量驱动,组件直接读 `var(--echo-...)`。
+- 右上角胶囊按钮一键切换。
 
 ### 3.5 实时通道
 
@@ -120,6 +159,12 @@ echoearth/
 ## 4. 非功能需求
 
 - 浏览器兼容:Chrome / Edge / Safari 最近 2 个大版本;移动端可看可发。
+- 移动端响应式 **[Iter-02]**:
+  - 容器使用 `100dvh` 避免 iOS 浏览器 chrome 抖动。
+  - Composer 与 Toast 容器尊重 `env(safe-area-inset-bottom)`。
+  - 气泡卡片在 ≤ 640px 视口下缩小字号与 padding。
+  - StatusBar 在 < 420px 视口下折叠为短文案。
+- a11y **[Iter-02]**:所有交互按钮均有 `aria-label`;Toast `aria-live` 提示;详情面板 / 昵称对话框为 `role="dialog"`。
 - 性能目标(MVP):100 在线、200 活跃气泡,广播延迟 < 300ms(本地)。
 - 部署:本地 `make dev` 一键启动;后端 `:8080`,前端 `:5173`,Vite 代理 `/ws` 与 `/api`;Docker compose 留二期。
 - 隐私:不存 IP 原文;气泡入库时 `lat/lng` 精度截断到 0.01(约 1.1 km),避免暴露精确位置。
@@ -128,14 +173,14 @@ echoearth/
 
 ## 5. 迭代路线图
 
-| 迭代 | 主题 |
-| --- | --- |
-| Iter-01(本次) | MVP 骨架:目录结构、地图、昵称、发布广播、5min 过期、内存存储、IP 兜底、本地一键启动 |
-| Iter-02 | 输入体验打磨(emoji 选择器、字数计数、点位预览)、错误提示、UI 美化、移动端 |
-| Iter-03 | 融入 A/B 元素:气泡情绪色(B)、消息可附 1 张图(A)、可"喜欢" |
-| Iter-04 | 切换存储到 PostGIS / Redis GEO;视区(bbox)查询;气泡 cluster |
-| Iter-05 | 邮箱注册 + 账户体系;个人足迹页;消息举报与审核 |
-| Iter-06 | WebSocket 横向扩展(Redis pub/sub);Docker / 生产部署 |
+| 迭代 | 主题 | 状态 |
+| --- | --- | --- |
+| Iter-01 | MVP 骨架:目录结构、地图、昵称、发布广播、5min 过期、内存存储、IP 兜底、本地一键启动 | ✅ |
+| Iter-02 | Composer 升级(emoji / 字数 / Enter 发送 / 点位预览)、Toast 系统、气泡详情面板、cyber/calm 双主题、移动端响应式 | ✅ |
+| Iter-03 | 融入 A/B 元素:气泡情绪色(B)、消息可附 1 张图(A)、可"喜欢"、同坐标气泡 cluster | ☐ |
+| Iter-04 | 切换存储到 PostGIS / Redis GEO;视区(bbox)查询;持久化 | ☐ |
+| Iter-05 | 邮箱注册 + 账户体系;个人足迹页(方向 A 产品化);消息举报与审核 | ☐ |
+| Iter-06 | WebSocket 横向扩展(Redis pub/sub);Docker / 生产部署 | ☐ |
 
 ## 6. 迭代交付文件规范
 

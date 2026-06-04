@@ -4,21 +4,74 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --------------------------------------------------------------------------
+ * Skin tokens. Components reference these as var(--echo-…).
+ * Default = cyber. The data-skin attribute on <html> swaps the palette.
+ * ------------------------------------------------------------------------ */
+:root,
+:root[data-skin='cyber'] {
+  --echo-bg: #050912;
+  --echo-panel: #0d1426;
+  --echo-text: #e2e8f0;
+  --echo-muted: #94a3b8;
+  --echo-accent: #5eead4;
+  --echo-accent-2: #a78bfa;
+  --echo-bubble-card-bg: rgba(13, 20, 38, 0.92);
+  --echo-bubble-border: rgba(94, 234, 212, 0.4);
+  --echo-bubble-glow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 30px rgba(94, 234, 212, 0.22);
+  --echo-bubble-dot: #5eead4;
+  --echo-bg-grad: radial-gradient(1200px 800px at 70% -10%, rgba(94, 234, 212, 0.10), transparent 70%),
+                  radial-gradient(900px 700px at -10% 110%, rgba(167, 139, 250, 0.10), transparent 70%),
+                  #050912;
+}
+
+:root[data-skin='calm'] {
+  --echo-bg: #0f172a;
+  --echo-panel: #1e293b;
+  --echo-text: #f1f5f9;
+  --echo-muted: #94a3b8;
+  --echo-accent: #38bdf8;
+  --echo-accent-2: #818cf8;
+  --echo-bubble-card-bg: rgba(30, 41, 59, 0.94);
+  --echo-bubble-border: rgba(148, 163, 184, 0.35);
+  --echo-bubble-glow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --echo-bubble-dot: #38bdf8;
+  --echo-bg-grad: linear-gradient(180deg, #0f172a 0%, #111a2e 100%);
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--echo-text);
+  background: var(--echo-bg);
 }
 
-/* Leaflet container needs explicit height */
+body {
+  background: var(--echo-bg-grad);
+  background-attachment: fixed;
+}
+
+/* Leaflet container fills the viewport and uses the bg color. */
 .leaflet-container {
   height: 100%;
   width: 100%;
-  background: #0b1220;
+  background: var(--echo-bg);
 }
 
-/* Custom divIcon bubble */
+/* Make sure leaflet attribution stays legible on dark themes. */
+.leaflet-container .leaflet-control-attribution {
+  background: rgba(0, 0, 0, 0.45);
+  color: #cbd5e1;
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--echo-accent);
+}
+
+/* --------------------------------------------------------------------------
+ * Bubble divIcon.
+ * ------------------------------------------------------------------------ */
 .echo-bubble {
   background: transparent !important;
   border: none !important;
@@ -32,21 +85,31 @@ html, body, #root {
   min-width: 96px;
   max-width: 240px;
   padding: 8px 12px;
-  background: rgba(17, 26, 46, 0.92);
-  color: #e2e8f0;
-  border: 1px solid rgba(94, 234, 212, 0.35);
+  background: var(--echo-bubble-card-bg);
+  color: var(--echo-text);
+  border: 1px solid var(--echo-bubble-border);
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 24px rgba(94, 234, 212, 0.18);
+  box-shadow: var(--echo-bubble-glow);
   backdrop-filter: blur(6px);
   font-size: 13px;
   line-height: 1.4;
+  cursor: pointer;
   pointer-events: auto;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+.echo-bubble__card:hover {
+  border-color: var(--echo-accent);
+  transform: translate(-50%, -103%) scale(1.02);
+}
+.echo-bubble__card--active {
+  border-color: var(--echo-accent);
+  box-shadow: var(--echo-bubble-glow), 0 0 0 2px var(--echo-accent);
 }
 
 .echo-bubble__nick {
   display: block;
   font-size: 11px;
-  color: #5eead4;
+  color: var(--echo-accent);
   margin-bottom: 2px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -63,9 +126,9 @@ html, body, #root {
   bottom: -6px;
   width: 12px;
   height: 12px;
-  background: rgba(17, 26, 46, 0.92);
-  border-right: 1px solid rgba(94, 234, 212, 0.35);
-  border-bottom: 1px solid rgba(94, 234, 212, 0.35);
+  background: var(--echo-bubble-card-bg);
+  border-right: 1px solid var(--echo-bubble-border);
+  border-bottom: 1px solid var(--echo-bubble-border);
   transform: translateX(-50%) rotate(45deg);
 }
 
@@ -77,9 +140,9 @@ html, body, #root {
   height: 10px;
   margin-left: -5px;
   margin-top: -5px;
-  background: #5eead4;
+  background: var(--echo-bubble-dot);
   border-radius: 50%;
-  box-shadow: 0 0 12px rgba(94, 234, 212, 0.9);
+  box-shadow: 0 0 12px var(--echo-bubble-dot);
   animation: echoPulse 2s ease-out infinite;
 }
 
@@ -96,4 +159,31 @@ html, body, #root {
 @keyframes bubbleIn {
   0%   { transform: translate(-50%, -90%) scale(0.6); opacity: 0; }
   100% { transform: translate(-50%, -100%) scale(1);  opacity: 1; }
+}
+
+/* --------------------------------------------------------------------------
+ * Shared UI animations.
+ * ------------------------------------------------------------------------ */
+@keyframes toastIn {
+  0%   { transform: translateY(8px); opacity: 0; }
+  100% { transform: translateY(0);   opacity: 1; }
+}
+
+@keyframes popIn {
+  0%   { transform: translateY(4px) scale(0.96); opacity: 0; }
+  100% { transform: translateY(0)    scale(1);   opacity: 1; }
+}
+
+@keyframes slideInRight {
+  0%   { transform: translateX(20px); opacity: 0; }
+  100% { transform: translateX(0);    opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  /* Mobile tweaks: smaller bubble cards so they don't dominate the screen. */
+  .echo-bubble__card {
+    max-width: 200px;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
 }

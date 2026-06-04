@@ -62,3 +62,16 @@ export interface BootstrapResponse {
   activeBubbles: Bubble[]
   online: number
 }
+
+// UI-only types -------------------------------------------------------------
+
+export type ToastKind = 'info' | 'success' | 'warn' | 'error'
+
+export interface ToastItem {
+  id: string
+  kind: ToastKind
+  message: string
+  durationMs: number
+}
+
+export type Skin = 'cyber' | 'calm'

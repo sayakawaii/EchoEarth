@@ -8,10 +8,13 @@ import { MapView } from './components/MapView'
 import { NicknameDialog } from './components/NicknameDialog'
 import { ComposerDock } from './components/ComposerDock'
 import { StatusBar } from './components/StatusBar'
+import { BubbleDetail } from './components/BubbleDetail'
 
 import { useNickname } from './hooks/useNickname'
 import { useGeolocation } from './hooks/useGeolocation'
 import { useWebSocket } from './hooks/useWebSocket'
+import { useTheme } from './hooks/useTheme'
+import { useToast } from './components/Toast'
 
 import { fetchBootstrap } from './lib/api'
 import type {
@@ -21,6 +24,7 @@ import type {
   ErrorPayload,
   ExpirePayload,
   HelloPayload,
+  ToastKind,
 } from './lib/types'
 
 // Fix Leaflet's default marker icon URLs under Vite bundling.
@@ -36,10 +40,12 @@ const MAX_BUBBLES_CLIENT = 200
 export default function App() {
   const { nickname, setNickname, ready: nickReady } = useNickname()
   const [showNickEditor, setShowNickEditor] = useState(false)
+  const { skin, toggle: toggleSkin } = useTheme()
+  const toast = useToast()
 
   const [boot, setBoot] = useState<BootstrapResponse | null>(null)
   const [bubbles, setBubbles] = useState<Bubble[]>([])
-  const [hint, setHint] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [serverConfig, setServerConfig] = useState<{
     bubbleTtlSecs: number
     maxTextChars: number
@@ -77,46 +83,63 @@ export default function App() {
   const wsUrl = useMemo(() => {
     if (!nickname) return null
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const u = `${proto}//${window.location.host}/ws?nickname=${encodeURIComponent(nickname)}`
-    return u
+    return `${proto}//${window.location.host}/ws?nickname=${encodeURIComponent(nickname)}`
   }, [nickname])
 
-  const onFrame = useCallback((env: Envelope) => {
-    switch (env.type) {
-      case 'hello': {
-        const p = env.payload as HelloPayload
-        setServerConfig({
-          bubbleTtlSecs: p.bubbleTtlSecs,
-          maxTextChars: p.maxTextChars,
-          rateLimitSecs: p.rateLimitSecs,
-        })
-        setBubbles((prev) => mergeBubbles(prev, p.activeBubbles))
-        break
+  const prevStatusRef = useRef<'idle' | 'connecting' | 'open' | 'closed'>('idle')
+
+  const onFrame = useCallback(
+    (env: Envelope) => {
+      switch (env.type) {
+        case 'hello': {
+          const p = env.payload as HelloPayload
+          setServerConfig({
+            bubbleTtlSecs: p.bubbleTtlSecs,
+            maxTextChars: p.maxTextChars,
+            rateLimitSecs: p.rateLimitSecs,
+          })
+          setBubbles((prev) => mergeBubbles(prev, p.activeBubbles))
+          break
+        }
+        case 'bubble': {
+          const b = env.payload as Bubble
+          setBubbles((prev) => mergeBubbles(prev, [b]))
+          break
+        }
+        case 'expire': {
+          const p = env.payload as ExpirePayload
+          setBubbles((prev) => prev.filter((b) => b.id !== p.id))
+          setSelectedId((sel) => (sel === p.id ? null : sel))
+          break
+        }
+        case 'error': {
+          const p = env.payload as ErrorPayload
+          const [msg, kind] = translateError(p)
+          toast.push(msg, kind)
+          break
+        }
+        case 'pong':
+          break
+        default:
+          break
       }
-      case 'bubble': {
-        const b = env.payload as Bubble
-        setBubbles((prev) => mergeBubbles(prev, [b]))
-        break
-      }
-      case 'expire': {
-        const p = env.payload as ExpirePayload
-        setBubbles((prev) => prev.filter((b) => b.id !== p.id))
-        break
-      }
-      case 'error': {
-        const p = env.payload as ErrorPayload
-        setHint(translateError(p))
-        window.setTimeout(() => setHint(null), 4000)
-        break
-      }
-      case 'pong':
-        break
-      default:
-        break
-    }
-  }, [])
+    },
+    [toast],
+  )
 
   const { status, send } = useWebSocket({ url: wsUrl, onFrame })
+
+  // Surface connection status transitions as toasts.
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    if (prev === status) return
+    if (prev === 'open' && status === 'closed') {
+      toast.push('已断开,正在自动重连…', 'warn')
+    } else if ((prev === 'connecting' || prev === 'closed') && status === 'open') {
+      if (prev === 'closed') toast.push('已重新连接', 'success')
+    }
+    prevStatusRef.current = status
+  }, [status, toast])
 
   // 4. Client-side TTL sweeper (defense in depth against missed expire frames).
   useEffect(() => {
@@ -127,22 +150,32 @@ export default function App() {
     return () => window.clearInterval(t)
   }, [])
 
+  // Clear selected bubble if it was removed (by expire or TTL sweep).
+  useEffect(() => {
+    if (!selectedId) return
+    if (!bubbles.some((b) => b.id === selectedId)) setSelectedId(null)
+  }, [bubbles, selectedId])
+
   // 5. Send a bubble.
   const handleSend = useCallback(
     (text: string) => {
       if (!position) {
-        setHint('还没有定位,点击地图选个点再发送吧。')
+        toast.push('还没有定位,点击地图选个点再发送吧。', 'warn')
+        return
+      }
+      if (status !== 'open') {
+        toast.push('连接尚未就绪,正在重连…', 'warn')
         return
       }
       const ok = send('publish', { text, lat: position.lat, lng: position.lng })
       if (!ok) {
-        setHint('连接尚未就绪,正在重连…')
+        toast.push('发送失败,请重试。', 'error')
       }
     },
-    [position, send],
+    [position, send, status, toast],
   )
 
-  // 6. Handle map click → set manual position; if user hasn't sent yet, also re-focus.
+  // 6. Map click → manual position; also re-focus.
   const handleMapClick = useCallback(
     (lat: number, lng: number) => {
       setManual(lat, lng)
@@ -157,6 +190,11 @@ export default function App() {
     if (boot) return [boot.ipLocation.lat, boot.ipLocation.lng]
     return [30, 0]
   }, [position, boot])
+
+  const selectedBubble = useMemo(
+    () => (selectedId ? bubbles.find((b) => b.id === selectedId) ?? null : null),
+    [selectedId, bubbles],
+  )
 
   // Nickname gating.
   if (!nickReady) return null
@@ -173,23 +211,38 @@ export default function App() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div className="relative h-[100dvh] w-screen overflow-hidden">
       <MapView
         center={initialCenter}
         zoom={2}
         bubbles={bubbles.slice(-MAX_BUBBLES_CLIENT)}
         focus={focus}
+        selectedId={selectedId}
         onMapClick={handleMapClick}
+        onBubbleClick={(b) => setSelectedId(b.id)}
       />
-      <StatusBar status={status} bubbleCount={bubbles.length} />
+
+      <StatusBar
+        status={status}
+        bubbleCount={bubbles.length}
+        skin={skin}
+        onToggleSkin={toggleSkin}
+      />
+
       <ComposerDock
         position={position}
+        ipLocation={boot?.ipLocation ?? null}
         maxChars={serverConfig.maxTextChars}
         disabled={status !== 'open'}
-        hint={hint ?? undefined}
         onSend={handleSend}
         nickname={nickname}
         onChangeNickname={() => setShowNickEditor(true)}
+      />
+
+      <BubbleDetail
+        bubble={selectedBubble}
+        onClose={() => setSelectedId(null)}
+        onFocus={(lat, lng) => setFocus({ lat, lng, zoom: 6 })}
       />
     </div>
   )
@@ -201,27 +254,26 @@ function mergeBubbles(prev: Bubble[], incoming: Bubble[]): Bubble[] {
   for (const b of incoming) map.set(b.id, b)
   const out = Array.from(map.values())
   out.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-  // Hard cap to keep DOM light.
   if (out.length > MAX_BUBBLES_CLIENT) {
     return out.slice(out.length - MAX_BUBBLES_CLIENT)
   }
   return out
 }
 
-function translateError(p: ErrorPayload): string {
+function translateError(p: ErrorPayload): [string, ToastKind] {
   switch (p.code) {
     case 'rate_limited':
-      return '发得太快啦,稍等几秒再试。'
+      return ['发得太快啦,稍等几秒再试。', 'warn']
     case 'too_long':
-      return '消息太长了。'
+      return ['消息太长了。', 'warn']
     case 'empty_text':
-      return '消息不能为空。'
+      return ['消息不能为空。', 'warn']
     case 'blocked':
-      return '内容被过滤,请换种说法。'
+      return ['内容被过滤,请换种说法。', 'warn']
     case 'bad_payload':
     case 'bad_frame':
-      return '协议错误(可能版本不匹配)。'
+      return ['协议错误(可能版本不匹配)。', 'error']
     default:
-      return `服务返回错误:${p.message || p.code}`
+      return [`服务返回错误:${p.message || p.code}`, 'error']
   }
 }
