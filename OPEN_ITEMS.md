@@ -2,7 +2,7 @@
 
 > 待办 / 风险 / 未决议项。每次迭代结束后刷新。
 >
-> 最近更新:2026-06-04(Iter-03 完成)
+> 最近更新:2026-06-06(Ops-01 VPS deploy 完成)
 
 ## 待办(下一迭代候选)
 
@@ -26,6 +26,9 @@
 - [ ] 多实例 + Redis pub/sub 横向扩展 WebSocket。
 - [ ] Docker compose;CI(GitHub Actions);生产部署一键脚本。
 - [ ] OpenStreetMap tile 切换为 Mapbox / CartoDB / 自建,符合公共 tile 用量政策。
+- [ ] 部署上 TLS:绑域名 + Caddy 单文件接管 :80/:443(目前 HTTP only)。
+- [ ] WS Origin 收紧 + 简易 IP 限流(目前仅 10s/条 publish 频控)。
+- [ ] `make deploy-bundle && deploy/push.sh` 一键推送 + 滚动重启(把当前 ad-hoc scp 流程脚本化)。
 
 ### 通用持续打磨(任意时点都可拿来做)
 
@@ -53,6 +56,14 @@
 - **跨域**:本地通过 Vite 代理避开;部署时需后端开严格 CORS 或同源部署。
 - **图片来源伪造**:`data:image/...` 前缀仅做字符串校验,不校验真实二进制头。MVP 可接受;严格场景需服务端嗅探 magic bytes。
 - **Toast 与 a11y screen reader 行为未在真机 VO/TalkBack 上验证**。
+
+## 已关闭(Ops-01)
+
+- [x] **生产部署**:Go 单二进制托管 SPA + API + WS,systemd 以 `echoearth` 系统用户跑、`AmbientCapabilities=CAP_NET_BIND_SERVICE` 绑 :80;`MemoryMax=256M` + 沙箱化 unit。
+- [x] **构建/分发**:`make deploy-bundle` 在本地交叉编译(`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -trimpath -ldflags='-s -w'`),不动 VPS 内存;`scp + tar` 一发到位(后续重复部署改 rsync `--delete`)。
+- [x] **回归保护**:`ECHOEARTH_STATIC_DIR` 留空时,后端不挂 `/*` 静态路由,`make dev` 行为完全不变。
+- [x] **缓存策略**:`/assets/*` 走 `public, max-age=31536000, immutable`,其它 SPA fallback 走 `no-store`,保证 index.html 永远是最新。
+- [x] **可达性 / 公网验证**:`/healthz` / `/api/bootstrap` / 真实浏览器载入 / WS 双客户端 publish→广播 / journald 日志均验证通过。
 
 ## 已关闭(Iter-03)
 

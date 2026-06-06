@@ -21,6 +21,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	addr := envOr("ECHOEARTH_ADDR", ":8080")
+	staticDir := os.Getenv("ECHOEARTH_STATIC_DIR")
 
 	st := store.New(200)
 	gr := geoip.NewResolver()
@@ -32,10 +33,11 @@ func main() {
 	h.StartBackgroundLoops(ctx)
 
 	router := api.NewRouter(api.Deps{
-		Hub:   h,
-		Store: st,
-		GeoIP: gr,
-		Log:   logger,
+		Hub:       h,
+		Store:     st,
+		GeoIP:     gr,
+		Log:       logger,
+		StaticDir: staticDir,
 	})
 
 	srv := &http.Server{
@@ -47,6 +49,7 @@ func main() {
 	go func() {
 		logger.Info("server listening",
 			"addr", addr,
+			"staticDir", staticDir,
 			"bubbleTtl", cfg.BubbleTTL.String(),
 			"rateLimit", cfg.RateLimitWindow.String(),
 		)

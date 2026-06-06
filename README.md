@@ -60,6 +60,22 @@ make backend   # 仅启动 Go 服务
 make frontend  # 仅启动 Vite 开发服
 ```
 
+## 部署到 VPS(单二进制,无 nginx 无 Docker)
+
+```bash
+make deploy-bundle                                       # 本地产 dist/deploy-bundle (~6.8 MB)
+tar -czf /tmp/echoearth.tgz -C dist/deploy-bundle .      # 压到 ~2.9 MB
+scp /tmp/echoearth.tgz user@host:/tmp/
+ssh user@host '\
+  rm -rf /tmp/echoearth-deploy && mkdir /tmp/echoearth-deploy && \
+  tar -xzf /tmp/echoearth.tgz -C /tmp/echoearth-deploy && \
+  bash /tmp/echoearth-deploy/install.sh'
+```
+
+Go 进程同时托管 `/healthz`、`/api/*`、`/ws`、SPA + SPA fallback,以 `echoearth`
+系统用户跑、`AmbientCapabilities=CAP_NET_BIND_SERVICE` 绑 :80,`MemoryMax=256M`。
+全部细节见 [`deploy/README.md`](./deploy/README.md)。
+
 ## 路线图
 
 详见 [REQUIREMENTS.md](./REQUIREMENTS.md) 的"迭代路线图"章节。

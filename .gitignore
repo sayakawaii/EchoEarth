@@ -34,6 +34,9 @@ pnpm-debug.log*
 .env.local
 .env.*.local
 
+# Build / deploy artifacts
+dist/
+
 # Misc
 coverage/
 *.tsbuildinfo
